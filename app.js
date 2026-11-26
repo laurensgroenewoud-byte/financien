@@ -656,6 +656,7 @@
   }
 
   function mergeState(incoming) {
+    Core.migrateIds(incoming.transactions || []);
     const byId = new Map(state.transactions.map(t => [t.id, t]));
     let added = 0;
     for (const t of incoming.transactions || []) {
@@ -684,7 +685,11 @@
       switch (a) {
         case 'tab': view.tab = el.dataset.tab; view.category = null; render(); window.scrollTo(0, 0); break;
         case 'lock': lock(); break;
-        case 'month': view.month = shiftMonth(view.month, Number(el.dataset.n)); render(); break;
+        case 'month': {
+          const next = shiftMonth(view.month, Number(el.dataset.n));
+          if (next > thisMonth()) { toast('Verder dan deze maand kan niet.'); break; }
+          view.month = next; render(); break;
+        }
         case 'goto-month': view.month = el.dataset.m; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); break;
         case 'month-all': view.month = 'alle'; render(); break;
         case 'month-current': view.month = null; render(); break;
@@ -730,6 +735,7 @@
           const r = await Core.open(fd.get('p'), await DB.get());
           key = r.key; meta = r.meta; state = r.data;
           state.settings = Object.assign({ autoLockMin: 5, lastBackup: null }, state.settings);
+          if (Core.migrateIds(state.transactions)) await save();
           lastActivity = Date.now();
           view = { tab: 'overzicht', month: null, search: '', category: null };
           render();
@@ -770,6 +776,7 @@
         if (!state) {
           key = r.key; meta = r.meta; state = r.data;
           state.settings = Object.assign({ autoLockMin: 5, lastBackup: null }, state.settings);
+          if (Core.migrateIds(state.transactions)) await save();
           await save();
           $dlg.close();
           view = { tab: 'overzicht', month: null, search: '', category: null };
@@ -778,6 +785,7 @@
         } else if (fd.get('mode') === 'replace') {
           state = r.data;
           state.settings = Object.assign({ autoLockMin: 5, lastBackup: null }, state.settings);
+          if (Core.migrateIds(state.transactions)) await save();
           await save(); // opnieuw versleuteld met het huidige wachtwoord
           $dlg.close(); view.month = null; render();
           toast(`Vervangen: ${state.transactions.length} transacties.`);
