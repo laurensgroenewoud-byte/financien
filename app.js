@@ -594,12 +594,13 @@
 
   // ---------- Acties ----------
   async function doImport(files) {
-    let added = 0, dup = 0, errs = [];
+    let added = 0, dup = 0, errs = [], rowsTotal = 0, parsed = 0;
     const newTx = [];
     const known = new Set(state.transactions.map(t => t.id));
     for (const f of files) {
       try {
-        const { transactions, errors } = Core.parseRabobank(Core.decodeBytes(await f.arrayBuffer()));
+        const { transactions, errors, rows } = Core.parseRabobank(Core.decodeBytes(await f.arrayBuffer()));
+        rowsTotal += rows; parsed += transactions.length;
         errs = errs.concat(errors.map(e => `${f.name}: ${e}`));
         for (const t of transactions) {
           if (known.has(t.id)) { dup++; continue; }
@@ -617,9 +618,10 @@
     render();
     const months = new Set(newTx.map(t => t.date.slice(0, 7)));
     const accs = new Set(newTx.map(t => t.account).filter(Boolean));
-    if (!added && !errs.length) { toast(`Geen nieuwe transacties: alle ${dup} stonden er al in.`); return; }
+    if (!added && !errs.length) { toast(`${rowsTotal} regels gelezen. Geen nieuwe transacties: alle ${dup} stonden er al in.`, 6000); return; }
     openDialog(`<div><h2>${added ? (errs.length ? 'Import deels gelukt' : 'Import gelukt') : 'Import mislukt'}</h2>
       ${added ? `<dl>
+        <dt>In bestand</dt><dd>${rowsTotal} regels, ${parsed} ingelezen</dd>
         <dt>Nieuw</dt><dd><strong>${added}</strong> transacties</dd>
         <dt>Periode</dt><dd>${h(periodText(newTx))}</dd>
         <dt>Maanden</dt><dd>${months.size}</dd>
