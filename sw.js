@@ -1,5 +1,5 @@
 /* Service worker: maakt de app offline bruikbaar. Bevat geen financiële gegevens. */
-const CACHE = 'financien-v3';
+const CACHE = 'financien-v4';
 const FILES = ['./', 'index.html', 'styles.css', 'core.js', 'app.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
