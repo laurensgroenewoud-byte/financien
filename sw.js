@@ -1,7 +1,7 @@
 /* Service worker: maakt de app offline bruikbaar. Bevat geen financiële gegevens. */
 const CACHE = 'financien-v3';
 const FILES = ['./', 'index.html', 'styles.css', 'core.js', 'app.js', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+  'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
