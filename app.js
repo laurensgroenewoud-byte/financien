@@ -191,11 +191,25 @@
     applySizes();
   }
 
+  function monthOptions() {
+    const set = monthsWithData();
+    if (view.month && view.month !== 'alle') set.add(view.month);
+    return [...set].sort().reverse();
+  }
+  function periodText(list) {
+    if (!list.length) return '–';
+    const ds = list.map(t => t.date).sort();
+    const f = d => { const [y, mo, da] = d.split('-').map(Number); return new Date(y, mo - 1, da).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }); };
+    return `${f(ds[0])} t/m ${f(ds[ds.length - 1])}`;
+  }
+
   function monthPicker() {
     return `
       <div class="month">
         <button class="icon" data-action="month" data-n="-1" aria-label="Vorige maand">‹</button>
-        <strong>${h(monthName(view.month))}</strong>
+        <select class="monthsel" data-input="month" aria-label="Kies maand">
+          ${monthOptions().map(m => `<option value="${m}" ${m === view.month ? 'selected' : ''}>${h(monthName(m))}</option>`).join('')}
+        </select>
         <button class="icon" data-action="month" data-n="1" aria-label="Volgende maand">›</button>
       </div>`;
   }
@@ -383,7 +397,26 @@
           <div class="row"><span class="mono">${h(acc.replace(/(.{4})/g, '$1 ').trim())}</span>
           <span><strong>${money(b)}</strong><br><small class="muted">op ${h(dayName(d))}</small></span></div>`).join('')}
       </section>` : ''}
-      </div></div>`;
+      </div></div>
+      ${allMonthsCard()}`;
+  }
+
+  function allMonthsCard() {
+    const ms = [...monthsWithData()].sort().reverse();
+    if (ms.length < 2) return '';
+    return `<section class="card">
+      <h2>Alle maanden (${ms.length})</h2>
+      <div class="mrow head"><span>Maand</span><span>In</span><span>Uit</span><span>Over</span></div>
+      ${ms.map(m => {
+        const t = totals(state.transactions.filter(x => x.date.startsWith(m)));
+        return `<button class="mrow ${m === view.month ? 'cur' : ''}" data-action="goto-month" data-m="${m}">
+          <span>${h(new Date(m + '-01T12:00').toLocaleDateString('nl-NL', { month: 'short', year: 'numeric' }))}</span>
+          <span class="pos">${moneyShort(t.inc)}</span>
+          <span>${moneyShort(t.exp)}</span>
+          <span class="${t.net >= 0 ? 'pos' : 'neg'}">${moneyShort(t.net)}</span>
+        </button>`;
+      }).join('')}
+    </section>`;
   }
 
   function txListHtml() {
@@ -440,6 +473,8 @@
       <section class="card">
         <h2>Huidige gegevens</h2>
         <div class="row"><span>Transacties</span><strong>${state.transactions.length}</strong></div>
+        <div class="row"><span>Periode</span><span>${h(periodText(state.transactions))}</span></div>
+        <div class="row"><span>Maanden</span><strong>${monthsWithData().size}</strong></div>
         <div class="row"><span>Rekeningen</span><span class="mono right">${accounts.map(a => h(a)).join('<br>') || '–'}</span></div>
       </section>`;
   }
@@ -560,6 +595,7 @@
   // ---------- Acties ----------
   async function doImport(files) {
     let added = 0, dup = 0, errs = [];
+    const newTx = [];
     const known = new Set(state.transactions.map(t => t.id));
     for (const f of files) {
       try {
@@ -567,7 +603,7 @@
         errs = errs.concat(errors.map(e => `${f.name}: ${e}`));
         for (const t of transactions) {
           if (known.has(t.id)) { dup++; continue; }
-          known.add(t.id); state.transactions.push(t); added++;
+          known.add(t.id); state.transactions.push(t); newTx.push(t); added++;
         }
       } catch (e) { errs.push(`${f.name}: ${e.message}`); }
     }
@@ -579,13 +615,21 @@
     }
     view.tab = added ? 'overzicht' : view.tab;
     render();
-    if (errs.length) {
-      openDialog(`<div><h2>Import ${added ? 'deels gelukt' : 'mislukt'}</h2>
-        <p>${added} nieuwe transacties, ${dup} al aanwezig.</p>
-        <ul class="errors">${errs.slice(0, 10).map(e => `<li>${h(e)}</li>`).join('')}</ul>
-        ${errs.length > 10 ? `<p class="muted">…en nog ${errs.length - 10} meldingen.</p>` : ''}
-        <div class="btns"><button class="primary" data-action="close">OK</button></div></div>`);
-    } else toast(`${added} nieuwe transacties geïmporteerd${dup ? `, ${dup} al aanwezig` : ''}.`);
+    const months = new Set(newTx.map(t => t.date.slice(0, 7)));
+    const accs = new Set(newTx.map(t => t.account).filter(Boolean));
+    if (!added && !errs.length) { toast(`Geen nieuwe transacties: alle ${dup} stonden er al in.`); return; }
+    openDialog(`<div><h2>${added ? (errs.length ? 'Import deels gelukt' : 'Import gelukt') : 'Import mislukt'}</h2>
+      ${added ? `<dl>
+        <dt>Nieuw</dt><dd><strong>${added}</strong> transacties</dd>
+        <dt>Periode</dt><dd>${h(periodText(newTx))}</dd>
+        <dt>Maanden</dt><dd>${months.size}</dd>
+        <dt>Rekening${accs.size === 1 ? '' : 'en'}</dt><dd class="mono">${[...accs].map(h).join('<br>') || '–'}</dd>
+        ${dup ? `<dt>Overgeslagen</dt><dd>${dup} (stonden er al in)</dd>` : ''}
+      </dl>
+      ${months.size > 1 ? '<p class="muted small">Het overzicht toont één maand tegelijk. Kies een andere maand met de maandkiezer bovenaan, of bekijk onderaan het overzicht alle maanden op een rij.</p>' : ''}` : ''}
+      ${errs.length ? `<ul class="errors">${errs.slice(0, 10).map(e => `<li>${h(e)}</li>`).join('')}</ul>
+        ${errs.length > 10 ? `<p class="muted">…en nog ${errs.length - 10} meldingen.</p>` : ''}` : ''}
+      <div class="btns"><button class="primary" data-action="close">OK</button></div></div>`);
   }
 
   async function doBackup() {
@@ -641,6 +685,7 @@
         case 'tab': view.tab = el.dataset.tab; view.category = null; render(); window.scrollTo(0, 0); break;
         case 'lock': lock(); break;
         case 'month': view.month = shiftMonth(view.month, Number(el.dataset.n)); render(); break;
+        case 'goto-month': view.month = el.dataset.m; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); break;
         case 'month-all': view.month = 'alle'; render(); break;
         case 'month-current': view.month = null; render(); break;
         case 'cat-detail': catDetail(el.dataset.cat); break;
@@ -764,6 +809,9 @@
     }
   });
   $app.addEventListener('change', async e => {
+    if (e.target.dataset.input === 'month') {
+      view.month = e.target.value; render(); return;
+    }
     if (e.target.dataset.input === 'autolock') {
       state.settings.autoLockMin = Number(e.target.value);
       await save();
