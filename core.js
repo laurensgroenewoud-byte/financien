@@ -74,25 +74,39 @@ const Core = (() => {
     return text.replace(/^﻿/, '');
   }
 
-  function parseCSV(text) {
-    const nl = text.indexOf('\n');
-    const first = nl >= 0 ? text.slice(0, nl) : text;
-    const delim = first.split(';').length > first.split(',').length ? ';' : ',';
-    const rows = [];
-    let row = [], field = '', inQuotes = false;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
-      if (inQuotes) {
-        if (c === '"') {
-          if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false;
-        } else field += c;
-      } else if (c === '"') inQuotes = true;
-      else if (c === delim) { row.push(field); field = ''; }
-      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-      else if (c !== '\r') field += c;
+  // Regel voor regel inlezen. Een aanhalingsteken sluit een veld alleen af als er een
+  // scheidingsteken of het regeleinde op volgt, zodat losse " in omschrijvingen geen kwaad kunnen.
+  function parseLine(line, delim) {
+    const out = [];
+    let i = 0;
+    while (i <= line.length) {
+      if (line[i] === '"') {
+        let j = i + 1, f = '';
+        while (j < line.length) {
+          if (line[j] === '"') {
+            if (line[j + 1] === '"') { f += '"'; j += 2; continue; }
+            if (j + 1 === line.length || line[j + 1] === delim) break;
+            f += '"'; j++; continue;
+          }
+          f += line[j]; j++;
+        }
+        out.push(f);
+        i = j + 2;
+      } else {
+        let j = line.indexOf(delim, i);
+        if (j < 0) j = line.length;
+        out.push(line.slice(i, j));
+        i = j + 1;
+      }
     }
-    if (field !== '' || row.length) { row.push(field); rows.push(row); }
-    return rows.filter(r => r.some(f => f.trim() !== ''));
+    return out;
+  }
+
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/);
+    const first = lines[0] || '';
+    const delim = first.split(';').length > first.split(',').length ? ';' : ',';
+    return lines.filter(l => l.trim() !== '').map(l => parseLine(l, delim));
   }
 
   // "+1.234,56", "-12,50", "12.50" -> centen (integer)
@@ -142,6 +156,7 @@ const Core = (() => {
       const f = rows[r];
       const get = i => (i >= 0 && i < f.length ? f[i].trim() : '');
       try {
+        if (f.length !== header.length) throw new Error(`${f.length} kolommen in plaats van ${header.length}`);
         const tx = {
           account: normIban(get(iAcc)),
           date: parseDate(get(iDate)),
@@ -170,7 +185,7 @@ const Core = (() => {
         errors.push(`Regel ${r + 1}: ${e.message}`);
       }
     }
-    return { transactions, errors };
+    return { transactions, errors, rows: rows.length - 1 };
   }
 
   // ---------- Versleuteling (Web Crypto) ----------
