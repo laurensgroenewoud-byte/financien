@@ -157,13 +157,13 @@ const Core = (() => {
         };
         const seq = get(iSeq);
         let id;
-        if (tx.account && seq) id = tx.account + '|' + seq;
-        else {
-          const base = [tx.account, tx.date, tx.amount, tx.counterparty, tx.description].join('|');
-          const n = (seen.get(base) || 0) + 1;
-          seen.set(base, n);
-          id = 'h' + hash(base) + '-' + n;
-        }
+        // Volgnummers zijn niet altijd uniek over langere periodes, dus datum en bedrag horen bij de sleutel.
+        const base = seq
+          ? [tx.account, seq, tx.date, tx.amount].join('|')
+          : 'h' + hash([tx.account, tx.date, tx.amount, tx.counterparty, tx.description].join('|'));
+        const n = (seen.get(base) || 0) + 1;
+        seen.set(base, n);
+        id = n === 1 ? base : base + '#' + n;
         tx.id = id;
         transactions.push(tx);
       } catch (e) {
@@ -222,8 +222,17 @@ const Core = (() => {
     return { key, meta, data: JSON.parse(dec.decode(pt)) };
   }
 
+  // Oude sleutels (rekening|volgnr) omzetten naar het nieuwe formaat.
+  function migrateIds(transactions) {
+    let changed = 0;
+    for (const t of transactions) {
+      if (/^[A-Z0-9]+\|\d+$/.test(t.id)) { t.id = [t.id, t.date, t.amount].join('|'); changed++; }
+    }
+    return changed;
+  }
+
   return {
-    OWN, DEFAULT_CATEGORIES, defaultRules, categorize, normIban,
+    OWN, DEFAULT_CATEGORIES, migrateIds, defaultRules, categorize, normIban,
     decodeBytes, parseCSV, parseAmount, parseDate, parseRabobank,
     createKey, seal, open,
   };
